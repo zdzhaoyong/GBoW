@@ -1738,15 +1738,15 @@ void Vocabulary::transform(const TinyMat &feature,
 
   //binary descriptor
  // int ntimes=0;
-  if (getDescritorType()==GImageType<uchar,1>::Type){
+  if (feature.type()==GImageType<uchar,1>::Type){
       do
       {
-          auto const  &nodes = m_nodes[final_id].childNum;
+          const Node& node = m_nodes[final_id];
           uint64_t best_d = std::numeric_limits<uint64_t>::max();
           int idx=0,bestidx=0;
-           for(int i=0;i<nodes;i++)
+           for(int i=0;i<node.childNum;i++)
           {
-               const auto& id=m_nodes[final_id].child[i];
+               const auto& id=node.child[i];
               //compute distance
              //  std::cout<<idx<< " "<<id<<" "<< m_nodes[id].descriptor<<std::endl;
               uint64_t dist= distance_8uc1(feature, m_nodes[id].descriptor);
