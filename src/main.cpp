@@ -1,7 +1,9 @@
 #include "GBoW.h"
 #include <opencv2/highgui/highgui.hpp>
 #include <opencv2/features2d/features2d.hpp>
+#include <opencv2/nonfree/nonfree.hpp>
 #include <GSLAM/core/GSLAM.h>
+#include <GSLAM/core/Timer.h>
 
 using std::ifstream;
 
@@ -12,7 +14,9 @@ void createVocabulary(void* ,std::string ,std::string sParams)
 
     cv::Ptr<cv::Feature2D> feature;
 
-    feature=new cv::ORB();
+    std::string featureType=svar.GetString("Vocabulary.Feature","ORB");
+    if(featureType=="ORB") feature=new cv::ORB();
+    else if(featureType=="SIFT") feature=new cv::SIFT();
 
     std::vector<GSLAM::TinyMat> features;
     std::string line;
@@ -30,18 +34,41 @@ void createVocabulary(void* ,std::string ,std::string sParams)
     }
     if(features.empty()) return ;
 
-    GSLAM::Vocabulary vocabulary(10,3);
-    std::cout<<"Creating vocabulary from image features.\n"<<vocabulary<<std::endl;
+    std::cout<<"Creating vocabulary from image features.\n";
 
-    vocabulary.create(features);
 
-    std::cout<<vocabulary;
+    SPtr<GSLAM::Vocabulary> vocabulary=GSLAM::Vocabulary::create(features,10,3);
 
+    std::cout<<(*vocabulary);
+
+    std::string vocabularyfile2save=svar.GetString("Vocabulary.Save","vocabulary.gbow");
+    if(vocabularyfile2save.size())
+    {
+        GSLAM::ScopedTimer timerSaveVocabulary("SaveVocabulary");
+        vocabulary->save(vocabularyfile2save);
+    }
+}
+
+void loadVocabulary(void* ,std::string ,std::string sParams)
+{
+    SCOPE_TIMER
+    GSLAM::Vocabulary vocabulary(sParams);
+
+    std::cout<<"Loaded vocabulary from "<<sParams<<"\n"<<vocabulary<<std::endl;
+
+    std::string vocabularyfile2save=svar.GetString("Vocabulary.Save","vocabulary.gbow");
+    if(sParams!=vocabularyfile2save)
+    {
+        GSLAM::ScopedTimer timerSaveVocabulary("SaveVocabulary");
+        std::cout<<"Saving vocabulary to "<<vocabularyfile2save<<std::endl;
+        vocabulary.save(vocabularyfile2save);
+    }
 }
 
 int main(int argc,char** argv)
 {
     scommand.RegisterCommand("createVocabulary",createVocabulary,NULL);
+    scommand.RegisterCommand("loadVocabulary",loadVocabulary,NULL);
     svar.ParseMain(argc,argv);
 
     return 0;
