@@ -29,24 +29,6 @@ typedef float                  WordValue;
 typedef std::map<WordId,float> BowVector;
 typedef std::map<WordId,std::vector<unsigned int> > FeatureVector;
 
-//class TinyMat: public GImage
-//{
-//public:
-//    TinyMat(){}
-
-//    TinyMat(const GImage& gimage):GImage(gimage){}
-
-//    TinyMat(int rows_,int cols_,int type=GImageType<>::Type,uchar* src=NULL,bool copy=true)
-//        :GImage(cols_,rows_,type,src,copy){}
-
-//    template <typename T>
-//    T* ptr()const{return (T*)data;}
-
-//    template <typename T>
-//    T* ptr(const int& idx)const{return ((T*)data)+idx;}
-
-//    const TinyMat row(int idx=0)const{return TinyMat(1,cols,type(),data+elemSize()*cols*idx);}
-//};
 
 typedef GImage TinyMat;
 
@@ -154,6 +136,15 @@ public:
      * @param levelsup levels to go up the vocabulary tree to get the node index
      */
     virtual void transform(const std::vector<TinyMat>& features,
+      BowVector &v, FeatureVector &fv, int levelsup=0) const;
+    /**
+     * Transform a set of descriptors into a bow vector and a feature vector
+     * @param features
+     * @param v (out) bow vector
+     * @param fv (out) feature vector of nodes and feature indexes
+     * @param levelsup levels to go up the vocabulary tree to get the node index
+     */
+    virtual void transform(const TinyMat& features,
       BowVector &v, FeatureVector &fv, int levelsup=0) const;
 
     /**
@@ -263,11 +254,18 @@ public:
 
     /** Returns the size of the descriptor employed. If the Vocabulary is empty, returns -1
      */
-    int getDescritorSize()const{return m_nodeDescriptors.cols;}
+    int getDescritorSize()const{
+        if(m_nodeDescriptors.cols) return m_nodeDescriptors.cols;
+        else if(m_words.size()) return m_words[0]->descriptor.cols;
+        else return 0;
+    }
     /** Returns the type of the descriptor employed normally(8U_C1, 32F_C1)
      */
-    int getDescritorType()const{return m_nodeDescriptors.type();}
-
+    int getDescritorType()const{
+        if(!m_nodeDescriptors.empty()) return m_nodeDescriptors.type();
+        else if(m_words.size()) return m_words[0]->descriptor.type();
+        else return GImageType<>::Type;
+    }
 
     /**
      * Calculates the mean value of a set of descriptors
@@ -285,7 +283,6 @@ public:
      */
      static float distance(const TinyMat &a, const TinyMat &b);
 
-protected:
 
   /**
    * Creates an instance of the scoring object accoring to m_scoring
@@ -403,6 +400,7 @@ protected:
       for(int i=0;i<m_nodes.size();i++)
       {
           Node& node=m_nodes[i];
+          if(node.descriptor.empty()) continue;
           if(m_nodeDescriptors.empty())
           {
               m_nodeDescriptors=TinyMat(m_nodes.size(),node.descriptor.cols,
@@ -459,7 +457,7 @@ protected:
           return true;
       }
   };
-
+public:
     /// Branching factor
     int m_k;
 
@@ -504,10 +502,10 @@ public:
    */
   virtual bool mustNormalize(Vocabulary::LNorm &norm) const = 0;
 
-  /// Log of epsilon
-        static const double LOG_EPS;
-  // If you change the type of WordValue, make sure you change also the
-        // epsilon value (this is needed by the KL method)
+  static inline const double LOG_EPS(){
+      static const double logeps=log(DBL_EPSILON);
+      return logeps;
+  }
 
   virtual ~GeneralScoring() {} //!< Required for virtual base classes
 
@@ -558,15 +556,12 @@ class __SCORING_CLASS(BhattacharyyaScoring, true, Vocabulary::L1);
 class __SCORING_CLASS(DotProductScoring, false, Vocabulary::L1);
 
 #undef __SCORING_CLASS
-// If you change the type of WordValue, make sure you change also the
-// epsilon value (this is needed by the KL method)
-const double GeneralScoring::LOG_EPS = log(DBL_EPSILON); // FLT_EPSILON
 
 
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-double L1Scoring::score(const BowVector &v1, const BowVector &v2) const
+inline double L1Scoring::score(const BowVector &v1, const BowVector &v2) const
 {
   BowVector::const_iterator v1_it, v2_it;
   const BowVector::const_iterator v1_end = v1.end();
@@ -616,7 +611,7 @@ double L1Scoring::score(const BowVector &v1, const BowVector &v2) const
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-double L2Scoring::score(const BowVector &v1, const BowVector &v2) const
+inline double L2Scoring::score(const BowVector &v1, const BowVector &v2) const
 {
   BowVector::const_iterator v1_it, v2_it;
   const BowVector::const_iterator v1_end = v1.end();
@@ -668,7 +663,7 @@ double L2Scoring::score(const BowVector &v1, const BowVector &v2) const
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-double ChiSquareScoring::score(const BowVector &v1, const BowVector &v2)
+inline double ChiSquareScoring::score(const BowVector &v1, const BowVector &v2)
   const
 {
   BowVector::const_iterator v1_it, v2_it;
@@ -718,7 +713,7 @@ double ChiSquareScoring::score(const BowVector &v1, const BowVector &v2)
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-double KLScoring::score(const BowVector &v1, const BowVector &v2) const
+inline double KLScoring::score(const BowVector &v1, const BowVector &v2) const
 {
   BowVector::const_iterator v1_it, v2_it;
   const BowVector::const_iterator v1_end = v1.end();
@@ -747,7 +742,7 @@ double KLScoring::score(const BowVector &v1, const BowVector &v2) const
     else if(v1_it->first < v2_it->first)
     {
       // move v1 forward
-      score += vi * (log(vi) - LOG_EPS);
+      score += vi * (log(vi) - LOG_EPS());
       ++v1_it;
     }
     else
@@ -761,7 +756,7 @@ double KLScoring::score(const BowVector &v1, const BowVector &v2) const
   // sum rest of items of v
   for(; v1_it != v1_end; ++v1_it)
     if(v1_it->second != 0)
-      score += v1_it->second * (log(v1_it->second) - LOG_EPS);
+      score += v1_it->second * (log(v1_it->second) - LOG_EPS());
 
   return score; // cannot be scaled
 }
@@ -769,7 +764,7 @@ double KLScoring::score(const BowVector &v1, const BowVector &v2) const
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-double BhattacharyyaScoring::score(const BowVector &v1,
+inline double BhattacharyyaScoring::score(const BowVector &v1,
   const BowVector &v2) const
 {
   BowVector::const_iterator v1_it, v2_it;
@@ -814,7 +809,7 @@ double BhattacharyyaScoring::score(const BowVector &v1,
 // ---------------------------------------------------------------------------
 // ---------------------------------------------------------------------------
 
-double DotProductScoring::score(const BowVector &v1,
+inline double DotProductScoring::score(const BowVector &v1,
   const BowVector &v2) const
 {
   BowVector::const_iterator v1_it, v2_it;
@@ -856,7 +851,7 @@ double DotProductScoring::score(const BowVector &v1,
   return score; // cannot scale
 }
 
-Vocabulary::Vocabulary
+inline Vocabulary::Vocabulary
   (int k, int L, WeightingType weighting, ScoringType scoring)
   : m_k(k), m_L(L), m_weighting(weighting), m_scoring(scoring)
 {
@@ -866,7 +861,7 @@ Vocabulary::Vocabulary
 // --------------------------------------------------------------------------
 
 
-Vocabulary::Vocabulary
+inline Vocabulary::Vocabulary
   (const std::string &filename): m_scoring_object(NULL)
 {
   load(filename);
@@ -875,7 +870,7 @@ Vocabulary::Vocabulary
 // --------------------------------------------------------------------------
 
 
-void Vocabulary::createScoringObject()
+inline void Vocabulary::createScoringObject()
 {
   m_scoring_object.reset();
 
@@ -911,7 +906,7 @@ void Vocabulary::createScoringObject()
 // --------------------------------------------------------------------------
 
 
-void Vocabulary::setScoringType(ScoringType type)
+inline void Vocabulary::setScoringType(ScoringType type)
 {
   m_scoring = type;
   createScoringObject();
@@ -920,21 +915,20 @@ void Vocabulary::setScoringType(ScoringType type)
 // --------------------------------------------------------------------------
 
 
-void Vocabulary::setWeightingType(WeightingType type)
+inline void Vocabulary::setWeightingType(WeightingType type)
 {
   this->m_weighting = type;
 }
 
-SPtr<Vocabulary> Vocabulary::create(const std::vector<TinyMat> &imgFeatures,
+inline SPtr<Vocabulary> Vocabulary::create(const std::vector<TinyMat> &imgFeatures,
                         int k , int L,WeightingType weighting , ScoringType scoring)
 {
-    SPtr<Vocabulary> voc(new Vocabulary(k,L,weighting,L1_NORM));
+    SPtr<Vocabulary> voc(new Vocabulary(k,L,weighting,scoring));
 
     // expected_nodes = Sum_{i=0..L} ( k^i )
     int expected_nodes =(int)((pow((double)voc->m_k, (double)voc->m_L + 1) - 1)/(voc->m_k - 1));
 
-    voc->m_nodes.reserve(expected_nodes); // avoid allocations when creating the tree
-
+    voc->m_nodes.reserve(expected_nodes);
 
     // create root
     voc->m_nodes.push_back(Node(0)); // root
@@ -1023,7 +1017,7 @@ SPtr<Vocabulary> Vocabulary::create(const std::vector<TinyMat> &imgFeatures,
 }
 // --------------------------------------------------------------------------
 
-void Vocabulary::HKmeansStep(NodeId parent_id,
+inline void Vocabulary::HKmeansStep(NodeId parent_id,
                              const std::vector<TinyMat> &descriptors, int current_level)
 {
 
@@ -1267,7 +1261,7 @@ void Vocabulary::HKmeansStep(NodeId parent_id,
 
 // --------------------------------------------------------------------------
 
-float Vocabulary::getEffectiveLevels() const
+inline float Vocabulary::getEffectiveLevels() const
 {
   long sum = 0;
    for(auto wit = m_words.begin(); wit != m_words.end(); ++wit)
@@ -1283,7 +1277,7 @@ float Vocabulary::getEffectiveLevels() const
 // --------------------------------------------------------------------------
 
 
-TinyMat Vocabulary::getWord(WordId wid) const
+inline TinyMat Vocabulary::getWord(WordId wid) const
 {
   return m_words[wid]->descriptor;
 }
@@ -1291,7 +1285,7 @@ TinyMat Vocabulary::getWord(WordId wid) const
 // --------------------------------------------------------------------------
 
 
-WordValue Vocabulary::getWordWeight(WordId wid) const
+inline WordValue Vocabulary::getWordWeight(WordId wid) const
 {
   return m_words[wid]->weight;
 }
@@ -1299,7 +1293,7 @@ WordValue Vocabulary::getWordWeight(WordId wid) const
 // --------------------------------------------------------------------------
 
 
-WordId Vocabulary::transform
+inline WordId Vocabulary::transform
   (const TinyMat& feature) const
 {
   if(empty())
@@ -1315,7 +1309,7 @@ WordId Vocabulary::transform
 
 // --------------------------------------------------------------------------
 
-void Vocabulary::transform(
+inline void Vocabulary::transform(
         const TinyMat& features, BowVector &v) const
 {
     //    std::vector<TinyMat> vf(features.rows);
@@ -1379,7 +1373,7 @@ void Vocabulary::transform(
 
 
 
-void Vocabulary::transform(const std::vector<TinyMat>& features, BowVector &v) const
+inline void Vocabulary::transform(const std::vector<TinyMat>& features, BowVector &v) const
 {
   v.clear();
 
@@ -1436,9 +1430,72 @@ void Vocabulary::transform(const std::vector<TinyMat>& features, BowVector &v) c
 }
 
 // --------------------------------------------------------------------------
+inline void Vocabulary::transform(const TinyMat& features,
+      BowVector &v, FeatureVector &fv, int levelsup) const
+{
+    v.clear();
+    fv.clear();
+
+    if(empty()) // safe for subclasses
+    {
+      return;
+    }
+
+    // normalize
+    LNorm norm;
+    bool must = m_scoring_object->mustNormalize(norm);
 
 
-void Vocabulary::transform(
+    if(m_weighting == TF || m_weighting == TF_IDF)
+    {
+      for(unsigned int i_feature = 0; i_feature<features.rows; ++i_feature)
+      {
+        WordId id;
+        NodeId nid;
+        WordValue w;
+        // w is the idf value if TF_IDF, 1 if TF
+
+        transform(features.row(i_feature), id, w, &nid, levelsup);
+
+        if(w > 0) // not stopped
+        {
+          addWeight(v,id, w);
+          addFeature(fv,nid, i_feature);
+        }
+      }
+
+      if(!v.empty() && !must)
+      {
+        // unnecessary when normalizing
+        const double nd = v.size();
+        for(BowVector::iterator vit = v.begin(); vit != v.end(); vit++)
+          vit->second /= nd;
+      }
+
+    }
+    else // IDF || BINARY
+    {
+        for(unsigned int i_feature = 0; i_feature<features.rows; ++i_feature)
+      {
+        WordId id;
+        NodeId nid;
+        WordValue w;
+        // w is idf if IDF, or 1 if BINARY
+
+        transform(features.row(i_feature), id, w, &nid, levelsup);
+
+        if(w > 0) // not stopped
+        {
+          addIfNotExist(v,id, w);
+          addFeature(fv,nid, i_feature);
+        }
+      }
+    } // if m_weighting == ...
+
+    if(must) normalize(v,norm);
+}
+
+inline void Vocabulary::transform(
   const std::vector<TinyMat>& features,
   BowVector &v, FeatureVector &fv, int levelsup) const
 {
@@ -1506,23 +1563,11 @@ void Vocabulary::transform(
   if(must) normalize(v,norm);
 }
 
-// --------------------------------------------------------------------------
-
 
 // --------------------------------------------------------------------------
 
 
-//void Vocabulary::transform
-//  (const TinyMat &feature, WordId &id) const
-//{
-//  WordValue weight;
-//  transform(feature, id, weight);
-//}
-
-// --------------------------------------------------------------------------
-
-
-void Vocabulary::transform(const TinyMat &feature,
+inline void Vocabulary::transform(const TinyMat &feature,
   WordId &word_id, WordValue &weight, NodeId *nid, int levelsup) const
 {
   // propagate the feature down the tree
@@ -1538,13 +1583,14 @@ void Vocabulary::transform(const TinyMat &feature,
   do
   {
     ++current_level;
-    double best_d = std::numeric_limits<double>::max();
-//    DescManip::distance(feature, m_nodes[final_id].descriptor);
+    float best_d = std::numeric_limits<float>::max();
 
-    for(int i=0;i<m_nodes[final_id].childNum;i++)
+    const Node& node=m_nodes[final_id];
+
+    for(int i=0;i<node.childNum;i++)
     {
-        auto id=m_nodes[final_id].child[i];
-      double d = distance(feature, m_nodes[id].descriptor);
+      auto id=node.child[i];
+      float d = distance(feature, m_nodes[id].descriptor);
       if(d < best_d)
       {
         best_d = d;
@@ -1564,7 +1610,7 @@ void Vocabulary::transform(const TinyMat &feature,
 
 
 
-void Vocabulary::transform(const TinyMat &feature,
+inline void Vocabulary::transform(const TinyMat &feature,
                            WordId &word_id, WordValue &weight ) const
 {
     // propagate the feature down the tree
@@ -1595,7 +1641,7 @@ void Vocabulary::transform(const TinyMat &feature,
 }
 // --------------------------------------------------------------------------
 
-NodeId Vocabulary::getParentNode
+inline NodeId Vocabulary::getParentNode
   (WordId wid, int levelsup) const
 {
   NodeId ret = m_words[wid]->id; // node id
@@ -1610,7 +1656,7 @@ NodeId Vocabulary::getParentNode
 // --------------------------------------------------------------------------
 
 
-void Vocabulary::getWordsFromNode
+inline void Vocabulary::getWordsFromNode
   (NodeId nid, std::vector<WordId> &words) const
 {
   words.clear();
@@ -1649,7 +1695,7 @@ void Vocabulary::getWordsFromNode
 // --------------------------------------------------------------------------
 
 
-int Vocabulary::stopWords(double minWeight)
+inline int Vocabulary::stopWords(double minWeight)
 {
   int c = 0;
    for(auto wit = m_words.begin(); wit != m_words.end(); ++wit)
@@ -1666,7 +1712,7 @@ int Vocabulary::stopWords(double minWeight)
 // --------------------------------------------------------------------------
 
 
-bool Vocabulary::save(const std::string &filename,  bool compressed) const
+inline bool Vocabulary::save(const std::string &filename,  bool compressed) const
 {
     if(filename.find(".yml")!=std::string::npos)
     {
@@ -1689,45 +1735,30 @@ bool Vocabulary::save(const std::string &filename,  bool compressed) const
     aux_stream.write((char*)&m_L,sizeof(m_L));
     aux_stream.write((char*)&m_scoring,sizeof(m_scoring));
     aux_stream.write((char*)&m_weighting,sizeof(m_weighting));
+    int type=getDescritorType();
+    int cols=getDescritorSize();
+    int rows=1;
+    aux_stream.write((char*)&cols,sizeof(cols));
+    aux_stream.write((char*)&rows,sizeof(rows));
+    aux_stream.write((char*)&type,sizeof(type));
+    TinyMat globalM(rows,cols,type);
+    int desbytes=globalM.elemSize()*globalM.cols;
     //nodes
-    std::vector<NodeId> parents={0};// root
-
-
-    while(!parents.empty())
+    for(int i=1;i<m_nodes.size();i++)
     {
-        NodeId pid = parents.back();
-        parents.pop_back();
-
-        const Node& parent = m_nodes[pid];
-
-        for(int i=0;i<parent.childNum;i++)
-        {
-            const auto& pit=parent.child[i];
-            const Node& child = m_nodes[pit];
-            aux_stream.write((char*)&child.id,sizeof(child.id));
-            aux_stream.write((char*)&pid,sizeof(pid));
-            aux_stream.write((char*)&child.weight,sizeof(child.weight));
-            auto& m=child.descriptor;
-            int type=m.type();
-            int cols=m.cols;
-            int rows=m.rows;
-            aux_stream.write((char*)&cols,sizeof(cols));
-            aux_stream.write((char*)&rows,sizeof(rows));
-            aux_stream.write((char*)&type,sizeof(type));
-            aux_stream.write((char*)m.ptr<char>(0),m.elemSize()*m.cols);
-            // add to parent list
-            if(!child.isLeaf()) parents.push_back(pit);
-        }
+        const Node& child = m_nodes[i];
+        aux_stream.write((char*)&child.parent,sizeof(child.parent));
+        aux_stream.write((char*)&child.weight,sizeof(child.weight));
+        const TinyMat& m=child.descriptor;
+        assert(m.type()==globalM.type()&&m.cols==globalM.cols);
+        aux_stream.write((char*)m.data,desbytes);
     }
     //words
-    //save size
     uint32_t m_words_size=m_words.size();
     aux_stream.write((char*)&m_words_size,sizeof(m_words_size));
-    for(auto wit = m_words.begin(); wit != m_words.end(); wit++)
+    for(Node* nit:m_words)
     {
-        WordId id = wit - m_words.begin();
-        aux_stream.write((char*)&id,sizeof(id));
-        aux_stream.write((char*)&(*wit)->id,sizeof((*wit)->id));
+        aux_stream.write((char*)&nit->id,sizeof(nit->id));
     }
 
 
@@ -1745,27 +1776,24 @@ bool Vocabulary::save(const std::string &filename,  bool compressed) const
 // --------------------------------------------------------------------------
 
 
-bool Vocabulary::load(const std::string &filename)
+inline bool Vocabulary::load(const std::string &filename)
 {
     // try binary formats : *.gbow
     {
         std::ifstream ifile(filename);
-        if (!ifile) throw std::runtime_error("Vocabulary::load Could not open file :"+filename+" for reading");
+        if (!ifile)
+        {
+            std::cerr<<("Vocabulary::load Could not open file :"+filename+" for reading")<<std::endl;
+            return false;
+        }
         uint64_t sig;//magic number describing the file
         ifile.read((char*)&sig,sizeof(sig));
         if (sig==88877711233) {//it is a binary file. read from it
-            ifile.seekg(0,std::ios::beg);
-            m_words.clear();
-            m_nodes.clear();
-            uint64_t sig=0;//magic number describing the file
-            ifile.read((char*)&sig,sizeof(sig));
-            if (sig!=88877711233) throw std::runtime_error("Vocabulary::fromStream  is not of appropriate type");
             bool compressed;
-            ifile.read((char*)&compressed,sizeof(compressed));
             uint32_t nnodes;
+            ifile.read((char*)&compressed,sizeof(compressed));
             ifile.read((char*)&nnodes,sizeof(nnodes));
             if(nnodes==0) return false;
-            std::stringstream decompressed_stream;
             std::istream *_used_str=0;
             if (compressed){
                 return false;
@@ -1781,40 +1809,37 @@ bool Vocabulary::load(const std::string &filename)
             _used_str->read((char*)&m_weighting,sizeof(m_weighting));
 
             createScoringObject();
+
+            int type,cols,rows;
+            _used_str->read((char*)&cols,sizeof(cols));
+            _used_str->read((char*)&rows,sizeof(rows));
+            _used_str->read((char*)&type,sizeof(type));
             m_nodes.resize(nnodes);
-            m_nodes[0].id = 0;
+            m_nodeDescriptors=TinyMat(m_nodes.size(),cols,type);
 
             for(size_t i = 1; i < m_nodes.size(); ++i)
             {
-                NodeId nid;
-                _used_str->read((char*)&nid,sizeof(NodeId));
-                Node& child = m_nodes[nid];
-                child.id=nid;
-                _used_str->read((char*)&child.parent,sizeof(child.parent));
-                _used_str->read((char*)&child.weight,sizeof(child.weight));
-                int type,cols,rows;
-                _used_str->read((char*)&cols,sizeof(cols));
-                _used_str->read((char*)&rows,sizeof(rows));
-                _used_str->read((char*)&type,sizeof(type));
+                Node& node = m_nodes[i];
+                node.id=i;
+                _used_str->read((char*)&node.parent,sizeof(node.parent));
+                _used_str->read((char*)&node.weight,sizeof(node.weight));
+                m_nodes[node.parent].addChild(node.id);
 
-                TinyMat m(rows,cols,type);
+                TinyMat m=m_nodeDescriptors.row(i);
                 _used_str->read((char*)m.ptr<char>(0),m.elemSize()*m.cols);
-                m_nodes[child.parent].addChild(child.id);
+                node.descriptor=m;
              }
-             //    // words
+             //  words
             uint32_t m_words_size;
             _used_str->read((char*)&m_words_size,sizeof(m_words_size));
             m_words.resize(m_words_size);
             for(unsigned int i = 0; i < m_words.size(); ++i)
             {
-                WordId wid;NodeId nid;
-                _used_str->read((char*)&wid,sizeof(wid));
+                NodeId nid;
                 _used_str->read((char*)&nid,sizeof(nid));
-                m_nodes[nid].word_id = wid;
-                m_words[wid] = &m_nodes[nid];
+                m_words[i] = &m_nodes[nid];
+                m_nodes[nid].word_id=i;
             }
-
-            unifyDescriptors();
             return true;
         }
     }
@@ -1847,13 +1872,10 @@ bool Vocabulary::load(const std::string &filename)
         m_nodes.resize(1);
         m_nodes[0].id = 0;
 
-        int counter=0;
         while(!ifile.eof()){
             std::string snode;
             getline(ifile,snode);
-//            if (counter++%100==0)std::cerr<<".";
-            // std::cout<<snode<<std::endl;
-            if (snode.size()==0)break;
+            if (snode.size()==0) break;
             std::stringstream ssnode(snode);
 
             int nid = m_nodes.size();
@@ -1876,17 +1898,14 @@ bool Vocabulary::load(const std::string &filename)
             m_nodes[nid].weight=data.back();
             data.pop_back();//remove
             //the rest, to the descriptor
-            m_nodes[nid].descriptor=TinyMat::create(1,data.size(),GImageType<uchar>::Type);
-            auto ptr=m_nodes[nid].descriptor.ptr<uchar>(0);
+            m_nodes[nid].descriptor=TinyMat(1,data.size(),GImageType<uchar>::Type);
+            auto ptr=m_nodes[nid].descriptor.data;
             for(auto d:data) *ptr++=d;
 
             if(nIsLeaf>0)
             {
-                int wid = m_words.size();
-                m_words.resize(wid+1);
-
-                m_nodes[nid].word_id = wid;
-                m_words[wid] = &m_nodes[nid];
+                m_nodes[nid].word_id = m_words.size();
+                m_words.push_back(&m_nodes[nid]);
             }
         }
         unifyDescriptors();
@@ -1910,7 +1929,7 @@ bool Vocabulary::load(const std::string &filename)
  * @param voc
  */
 
-std::ostream& operator<<(std::ostream &os,
+inline std::ostream& operator<<(std::ostream &os,
   const Vocabulary &voc)
 {
   os << "Vocabulary: k = " << voc.getBranchingFactor()
@@ -1940,10 +1959,12 @@ std::ostream& operator<<(std::ostream &os,
 
   return os;
 }
+
+
 /**
  * @brief Vocabulary::clear
  */
-void Vocabulary::clear(){
+inline void Vocabulary::clear(){
     m_scoring_object.reset();
     m_scoring_object=0;
     m_nodes.clear();
@@ -1951,7 +1972,7 @@ void Vocabulary::clear(){
     m_nodeDescriptors=TinyMat();
 }
 
-void Vocabulary::meanValue(const std::vector<TinyMat> &descriptors,
+inline void Vocabulary::meanValue(const std::vector<TinyMat> &descriptors,
                        TinyMat &mean)
 {
 
@@ -1965,7 +1986,7 @@ void Vocabulary::meanValue(const std::vector<TinyMat> &descriptors,
     //binary descriptor
     if (descriptors[0].type()==GImageType<uchar>::Type ){
         //determine number of bytes of the binary descriptor
-        int L= descriptors[0].cols*descriptors[0].elemSize();
+        int L= descriptors[0].cols;
         std::vector<int> sum( L * 8, 0);
 
         for(size_t i = 0; i < descriptors.size(); ++i)
@@ -2016,7 +2037,7 @@ void Vocabulary::meanValue(const std::vector<TinyMat> &descriptors,
     }
 }
 
-float Vocabulary::distance(const TinyMat &a,  const TinyMat &b)
+inline float Vocabulary::distance(const TinyMat &a,  const TinyMat &b)
 {
     //binary descriptor
     if (a.type()==GImageType<uchar>::Type){
@@ -2031,7 +2052,7 @@ float Vocabulary::distance(const TinyMat &a,  const TinyMat &b)
          }
          return ret;
     }
-#if defined(__SSE2__)
+#if defined(__SSE2__)&&defined(__SSE__)&&defined(__SSE4__)
     else if(a.cols%16==0)
     {
         int _nwords=a.cols/16;

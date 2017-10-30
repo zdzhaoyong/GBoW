@@ -4,6 +4,7 @@
 #include <opencv2/nonfree/nonfree.hpp>
 #include <GSLAM/core/GSLAM.h>
 #include <GSLAM/core/Timer.h>
+#include "gtest.h"
 
 using std::ifstream;
 
@@ -37,9 +38,9 @@ void createVocabulary(void* ,std::string ,std::string sParams)
     std::cout<<"Creating vocabulary from image features.\n";
 
 
-    SPtr<GSLAM::Vocabulary> vocabulary=GSLAM::Vocabulary::create(features,10,3);
+    SPtr<GSLAM::Vocabulary> vocabulary=GSLAM::Vocabulary::create(features,10,4);
 
-    std::cout<<(*vocabulary);
+    std::cout<<(*vocabulary)<<std::endl;
 
     std::string vocabularyfile2save=svar.GetString("Vocabulary.Save","vocabulary.gbow");
     if(vocabularyfile2save.size())
@@ -71,5 +72,7 @@ int main(int argc,char** argv)
     scommand.RegisterCommand("loadVocabulary",loadVocabulary,NULL);
     svar.ParseMain(argc,argv);
 
-    return 0;
+    testing::InitGoogleTest(&argc,argv);
+
+    return RUN_ALL_TESTS();
 }
